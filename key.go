@@ -70,6 +70,10 @@ type PublicKey interface {
 	// format
 	MarshalPKIXPublicKeyDER() (der_block []byte, err error)
 
+	// MarshalPKCS1PublicKeyPEM converts the public key to PEM-encoded PKCS#1
+	// format
+	MarshalPKCS1PublicKeyPEM() (pem_block []byte, err error)
+
 	evpPKey() *C.EVP_PKEY
 }
 
@@ -207,6 +211,24 @@ func (key *pKey) MarshalPKIXPublicKeyDER() (der_block []byte,
 	defer C.RSA_free(rsa)
 	if int(C.i2d_RSA_PUBKEY_bio(bio, rsa)) != 1 {
 		return nil, errors.New("failed dumping public key der")
+	}
+	return ioutil.ReadAll(asAnyBio(bio))
+}
+
+func (key *pKey) MarshalPKCS1PublicKeyPEM() (pem_block []byte,
+	err error) {
+	bio := C.BIO_new(C.BIO_s_mem())
+	if bio == nil {
+		return nil, errors.New("failed to allocate memory BIO")
+	}
+	defer C.BIO_free(bio)
+	rsa := (*C.RSA)(C.EVP_PKEY_get1_RSA(key.key))
+	if rsa == nil {
+		return nil, errors.New("failed getting rsa key")
+	}
+	defer C.RSA_free(rsa)
+	if int(C.PEM_write_bio_RSAPublicKey(bio, rsa)) != 1 {
+		return nil, errors.New("failed dumping public key pem")
 	}
 	return ioutil.ReadAll(asAnyBio(bio))
 }
