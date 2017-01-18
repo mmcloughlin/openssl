@@ -78,6 +78,10 @@ type PublicKey interface {
 	// format
 	MarshalPKCS1PublicKeyDER() (pem_block []byte, err error)
 
+	// PublicDecrypt decrypts the given data with the public key (for signature
+	// verification).
+	PublicDecrypt([]byte) ([]byte, error)
+
 	evpPKey() *C.EVP_PKEY
 }
 
@@ -163,6 +167,28 @@ func (key *pKey) PrivateEncrypt(data []byte) ([]byte, error) {
 	buf := make([]byte, returnSize)
 
 	rt := int(C.RSA_private_encrypt(C.int(len(data)), (*C.uchar)(unsafe.Pointer(&data[0])), (*C.uchar)(unsafe.Pointer(&buf[0])), rsa, C.RSA_PKCS1_PADDING))
+	if rt < 0 {
+		return nil, errorFromErrorQueue()
+	}
+
+	buf = buf[:rt]
+	return buf, nil
+}
+
+func (key *pKey) PublicDecrypt(data []byte) ([]byte, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	rsa := C.EVP_PKEY_get1_RSA(key.key)
+	if rsa == nil {
+		return nil, errors.New("not an rsa key")
+	}
+	defer C.RSA_free(rsa)
+
+	returnSize := int(C.RSA_size(rsa))
+	buf := make([]byte, returnSize)
+
+	rt := int(C.RSA_public_decrypt(C.int(len(data)), (*C.uchar)(unsafe.Pointer(&data[0])), (*C.uchar)(unsafe.Pointer(&buf[0])), rsa, C.RSA_PKCS1_PADDING))
 	if rt < 0 {
 		return nil, errorFromErrorQueue()
 	}
