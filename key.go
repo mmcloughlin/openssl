@@ -94,6 +94,9 @@ type PrivateKey interface {
 	// MarshalPKCS1PrivateKeyDER converts the private key to DER-encoded PKCS1
 	// format
 	MarshalPKCS1PrivateKeyDER() (der_block []byte, err error)
+
+	// PrivateEncrypt encrypts the given data with the private key (for signing).
+	PrivateEncrypt([]byte) ([]byte, error)
 }
 
 type pKey struct {
@@ -144,6 +147,28 @@ func (key *pKey) VerifyPKCS1v15(method Method, data, sig []byte) error {
 		return errors.New("verifypkcs1v15: failed to finalize verify")
 	}
 	return nil
+}
+
+func (key *pKey) PrivateEncrypt(data []byte) ([]byte, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	rsa := C.EVP_PKEY_get1_RSA(key.key)
+	if rsa == nil {
+		return nil, errors.New("not an rsa key")
+	}
+	defer C.RSA_free(rsa)
+
+	returnSize := int(C.RSA_size(rsa))
+	buf := make([]byte, returnSize)
+
+	rt := int(C.RSA_private_encrypt(C.int(len(data)), (*C.uchar)(unsafe.Pointer(&data[0])), (*C.uchar)(unsafe.Pointer(&buf[0])), rsa, C.RSA_PKCS1_PADDING))
+	if rt < 0 {
+		return nil, errorFromErrorQueue()
+	}
+
+	buf = buf[:rt]
+	return buf, nil
 }
 
 func (key *pKey) MarshalPKCS1PrivateKeyPEM() (pem_block []byte,
